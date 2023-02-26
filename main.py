@@ -9,6 +9,9 @@ from face_comparision import compare
 import utils
 from tqdm import tqdm
 
+# utils.check_and_create_dir(config.cluster_path)
+# utils.check_and_create_dir(config.sorted_path)
+
 # get cluster count so can save new cluster without overlapping
 cluster_count = sorted(os.listdir(config.cluster_path))
 if len(cluster_count) > 0:
