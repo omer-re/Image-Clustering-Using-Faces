@@ -9,6 +9,7 @@ from face_comparision import compare
 import utils
 from tqdm import tqdm
 from PIL import Image
+import numpy as np
 
 # Ensure cluster and sorted directories exist
 utils.check_and_create_dir(config.cluster_path)
@@ -21,11 +22,25 @@ if len(cluster_count) > 0:
 else:
     count = 0
 
-# Use os.walk to process files in the input directory and all subdirectories
+# Define allowed image extensions
+allowed_extensions = {'.png', '.jpeg', '.jpg', '.gif', '.bmp', '.tiff'}
+
+# Use os.walk to process only image files in the input directory and all subdirectories
 all_files = []
 for root, dirs, files in os.walk(config.input_path):
     for file in files:
-        all_files.append(os.path.join(root, file))
+        # Check if the file extension is in the allowed list
+        if os.path.splitext(file.lower())[1] in allowed_extensions:
+            all_files.append(os.path.join(root, file))
+
+# Helper function to calculate average distance for matching
+def is_encoding_match(cluster_encodings, new_encoding, threshold=0.5):
+    distances = face_recognition.face_distance(cluster_encodings, new_encoding)
+    avg_distance = np.mean(distances)
+    return avg_distance < threshold
+
+# Track faces that have already been clustered in each run
+clustered_faces = set()
 
 # Process each file found in all directories and subdirectories
 for file_path in tqdm(all_files, total=len(all_files)):
@@ -43,6 +58,10 @@ for file_path in tqdm(all_files, total=len(all_files)):
 
     # Process each detected face encoding in the image
     for face_encoding in face_encodings:
+        encoding_hash = hash(tuple(face_encoding))  # Create a unique hash for each face encoding
+        if encoding_hash in clustered_faces:
+            continue  # Skip if this face has already been clustered
+
         is_found = False  # Flag to indicate if encoding matched an existing cluster
 
         # Check if there are existing clusters
@@ -52,17 +71,15 @@ for file_path in tqdm(all_files, total=len(all_files)):
                 cluster_path = os.path.join(config.cluster_path, cluster)
                 encoding_lists = utils.load_cluster_in_pickle(cluster_path)
 
-                # Compare the face encoding with the cluster encodings
-                results = compare(encoding_lists, face_encoding, face_recognition)
-
-                # Set criteria for matching cluster (based on number of matches)
-                if (len(results) > 4 and results.count(True) >= 3) or (len(results) <= 4 and results.count(True) >= 1):
+                # Use the improved matching function based on average distance
+                if is_encoding_match(encoding_lists, face_encoding):
                     is_found = True
                     # Append the encoding to the cluster and save it
                     encoding_lists.append(face_encoding)
                     utils.save_cluster_in_pickle(cluster_path, encoding_lists)
                     shutil.copy(file_path,
                                 os.path.join(config.sorted_path, cluster.split(".")[0], os.path.basename(file_path)))
+                    clustered_faces.add(encoding_hash)  # Mark face as clustered
                     break
 
         # If no matching cluster was found, create a new one
@@ -71,13 +88,14 @@ for file_path in tqdm(all_files, total=len(all_files)):
             utils.create_dir(os.path.join(config.sorted_path, new_cluster_id))
             shutil.copy(file_path, os.path.join(config.sorted_path, new_cluster_id, os.path.basename(file_path)))
             utils.save_cluster_in_pickle(os.path.join(config.cluster_path, f"{new_cluster_id}.pkl"), [face_encoding])
+            clustered_faces.add(encoding_hash)  # Mark face as clustered
             count += 1
 
-
 # Thumbnail Summary Generation Function
-def generate_cluster_images(thumbnail_size=(100, 100), grid_size=(5, 5)):
+def generate_cluster_images(thumbnail_size=(100, 100), grid_size=(3, 3)):
     """
-    Generate summary images for each cluster with thumbnails of faces.
+    Generate summary images for each cluster using only the face region in thumbnails.
+    Each summary image will be named according to its cluster ID.
     :param thumbnail_size: Size of each face thumbnail
     :param grid_size: Layout of thumbnails in the summary image (rows, columns)
     """
@@ -100,20 +118,33 @@ def generate_cluster_images(thumbnail_size=(100, 100), grid_size=(5, 5)):
         canvas_height = grid_size[0] * thumbnail_size[1]
         summary_image = Image.new("RGB", (canvas_width, canvas_height), "white")
 
-        # Place each image as a thumbnail in the grid
+        # Place each cropped face thumbnail in the grid
         for index, img_path in enumerate(image_files):
-            # Open the image and create a thumbnail
-            with Image.open(img_path) as img:
-                img.thumbnail(thumbnail_size)
-                x_offset = (index % grid_size[1]) * thumbnail_size[0]
-                y_offset = (index // grid_size[1]) * thumbnail_size[1]
-                summary_image.paste(img, (x_offset, y_offset))
+            # Open the image
+            image = face_recognition.load_image_file(img_path)
+
+            # Detect face locations
+            face_locations = face_recognition.face_locations(image)
+            if not face_locations:
+                continue  # Skip if no face is detected
+
+            # Use the first detected face for thumbnail
+            top, right, bottom, left = face_locations[0]
+            face_image = image[top:bottom, left:right]  # Crop to face region
+
+            # Convert to PIL Image and resize to thumbnail size
+            face_pil = Image.fromarray(face_image)
+            face_pil.thumbnail(thumbnail_size)
+
+            # Calculate position in the grid
+            x_offset = (index % grid_size[1]) * thumbnail_size[0]
+            y_offset = (index // grid_size[1]) * thumbnail_size[1]
+            summary_image.paste(face_pil, (x_offset, y_offset))
 
         # Save the summary image with the cluster ID as the filename
         output_path = os.path.join(sorted_path, f"{cluster_id}.jpg")
         summary_image.save(output_path)
         print(f"Saved summary image for cluster {cluster_id} at {output_path}")
-
 
 # Run the thumbnail generation after clustering
 generate_cluster_images()
