@@ -56,11 +56,14 @@ for file_path in tqdm(all_files, total=len(all_files)):
         shutil.copy(file_path, os.path.join(config.sorted_path, 'others', os.path.basename(file_path)))
         continue
 
+    # Dictionary to keep track of cluster assignments for each unique face in the current image
+    assigned_clusters = {}
+
     # Process each detected face encoding in the image
     for face_encoding in face_encodings:
         encoding_hash = hash(tuple(face_encoding))  # Create a unique hash for each face encoding
         if encoding_hash in clustered_faces:
-            continue  # Skip if this face has already been clustered
+            continue  # Skip if this face has already been clustered in previous images
 
         is_found = False  # Flag to indicate if encoding matched an existing cluster
 
@@ -74,12 +77,17 @@ for file_path in tqdm(all_files, total=len(all_files)):
                 # Use the improved matching function based on average distance
                 if is_encoding_match(encoding_lists, face_encoding):
                     is_found = True
+                    # If the face has already been assigned a cluster in this image, skip further assignments
+                    if encoding_hash in assigned_clusters:
+                        break  # Skip to the next face encoding
+
                     # Append the encoding to the cluster and save it
                     encoding_lists.append(face_encoding)
                     utils.save_cluster_in_pickle(cluster_path, encoding_lists)
                     shutil.copy(file_path,
                                 os.path.join(config.sorted_path, cluster.split(".")[0], os.path.basename(file_path)))
                     clustered_faces.add(encoding_hash)  # Mark face as clustered
+                    assigned_clusters[encoding_hash] = cluster.split(".")[0]  # Track assignment for this image
                     break
 
         # If no matching cluster was found, create a new one
@@ -89,6 +97,7 @@ for file_path in tqdm(all_files, total=len(all_files)):
             shutil.copy(file_path, os.path.join(config.sorted_path, new_cluster_id, os.path.basename(file_path)))
             utils.save_cluster_in_pickle(os.path.join(config.cluster_path, f"{new_cluster_id}.pkl"), [face_encoding])
             clustered_faces.add(encoding_hash)  # Mark face as clustered
+            assigned_clusters[encoding_hash] = new_cluster_id  # Track assignment for this image
             count += 1
 
 # Thumbnail Summary Generation Function

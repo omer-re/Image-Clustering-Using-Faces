@@ -6,4 +6,5 @@ def loading_face(file_path ,face_recognition):
     :return: image matrix
     """
     image = face_recognition.load_image_file(file_path)
+
     return image
