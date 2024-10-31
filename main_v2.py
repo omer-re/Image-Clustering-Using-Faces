@@ -26,20 +26,17 @@ for root, dirs, files in os.walk(config.input_path):
         if os.path.splitext(file.lower())[1] in allowed_extensions:
             all_files.append(os.path.join(root, file))
 
+# Dictionary to track processed faces by unique identifier
+processed_faces = {}
+
 # Load images and extract face encodings
 data = []
 for file_path in tqdm(all_files, total=len(all_files)):
     print(f"Processing file: {file_path}")
     image = loading_face(file_path, face_recognition)
 
-    # Resize the image for memory efficiency during face detection
-    small_image = cv2.resize(image, (0, 0), fx=0.5, fy=0.5)  # Scale down to 50%
-
     # Detect faces using HOG model for memory efficiency
-    face_locations = face_recognition.face_locations(small_image, model="hog")
-
-    # Scale face locations back up to original size
-    face_locations = [(top * 2, right * 2, bottom * 2, left * 2) for (top, right, bottom, left) in face_locations]
+    face_locations = face_recognition.face_locations(image, model="hog")
 
     # Check if face locations are found
     if not face_locations:
@@ -56,8 +53,20 @@ for file_path in tqdm(all_files, total=len(all_files)):
         shutil.move(file_path, os.path.join(no_face_dir, os.path.basename(file_path)))
         continue
 
-    # Store each face location and encoding for clustering
+    # Process each face location and encoding
     for loc, encoding in zip(face_locations, face_encodings):
+        # Create a unique identifier using the image path and face location
+        face_id = f"{file_path}_{loc}"
+
+        # Check if this face has already been processed
+        if face_id in processed_faces:
+            print(f"Skipping duplicate face in {file_path} at location {loc}")
+            continue
+
+        # Mark this face as processed
+        processed_faces[face_id] = True
+
+        # Append the face encoding and metadata to the data list for clustering
         data.append({"imagePath": file_path, "loc": loc, "encoding": encoding})
 
 # Convert data to numpy array for DBSCAN clustering
