@@ -1,5 +1,6 @@
 import os
 import shutil
+import pickle
 import config
 import face_recognition
 from face_loading import loading_face
@@ -87,11 +88,23 @@ for label in unique_labels:
     cluster_dir = os.path.join(config.sorted_path, f"face_{label}")
     utils.check_and_create_dir(cluster_dir)
 
+    # Collect encodings for the current cluster to save in a .pkl file
+    cluster_encodings = []
+
     for idx, item in enumerate([data[i] for i in range(len(data)) if labels[i] == label]):
         # Load the original image and crop the detected face
         image = cv2.imread(item["imagePath"])
         top, right, bottom, left = item["loc"]
         face_image = image[top:bottom, left:right]
         cv2.imwrite(os.path.join(cluster_dir, f"face_{label}_{idx}.jpg"), face_image)
+
+        # Add the encoding to the cluster's list of encodings
+        cluster_encodings.append(item["encoding"])
+
+    # Save the cluster encodings to a .pkl file
+    pkl_path = os.path.join(config.cluster_path, f"face_{label}.pkl")
+    with open(pkl_path, "wb") as f:
+        pickle.dump(cluster_encodings, f)
+    print(f"Saved cluster encodings to {pkl_path}")
 
 print("Clustering complete.")
