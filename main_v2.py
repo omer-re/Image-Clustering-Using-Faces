@@ -10,6 +10,7 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 import cv2
 import csv
+from face_loading import loading_face
 
 # Ensure cluster and sorted directories exist
 utils.check_and_create_dir(config.cluster_path)
