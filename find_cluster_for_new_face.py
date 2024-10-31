@@ -4,6 +4,16 @@ import numpy as np
 import face_recognition
 import config
 from sklearn.metrics.pairwise import cosine_similarity
+import platform
+
+# Determine the model based on machine type
+def select_model():
+    if platform.system() == 'Darwin':  # MacOS system
+        print("Using 'cnn' model for face detection on MacOS.")
+        return "cnn"
+    else:
+        print("Using 'hog' model for face detection.")
+        return "hog"
 
 def find_cluster_for_new_face(new_image_path, threshold=0.5):
     """
@@ -18,7 +28,7 @@ def find_cluster_for_new_face(new_image_path, threshold=0.5):
     """
     # Load the new image and extract the face encoding
     image = face_recognition.load_image_file(new_image_path)
-    face_locations = face_recognition.face_locations(image, model="hog")
+    face_locations = face_recognition.face_locations(image, model="hog")  # Use selected model
     if not face_locations:
         print("No faces detected in the new image.")
         return None
@@ -44,6 +54,14 @@ def find_cluster_for_new_face(new_image_path, threshold=0.5):
         pkl_path = os.path.join(cluster_path, pkl_file)
         with open(pkl_path, 'rb') as f:
             cluster_encodings = pickle.load(f)
+
+        # Ensure the encodings are a 2D array
+        if len(cluster_encodings) == 0:
+            continue
+
+        cluster_encodings = np.array(cluster_encodings)
+        if cluster_encodings.ndim == 1:
+            cluster_encodings = cluster_encodings.reshape(1, -1)
 
         # Calculate similarity with each encoding in the cluster
         similarities = cosine_similarity([new_face_encoding], cluster_encodings)
