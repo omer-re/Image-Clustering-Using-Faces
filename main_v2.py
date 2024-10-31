@@ -3,13 +3,13 @@ import shutil
 import pickle
 import config
 import face_recognition
-from face_loading import loading_face
 import utils
 from tqdm import tqdm
 from PIL import Image
 import numpy as np
 from sklearn.cluster import DBSCAN
 import cv2
+import csv
 
 # Ensure cluster and sorted directories exist
 utils.check_and_create_dir(config.cluster_path)
@@ -19,6 +19,12 @@ utils.check_and_create_dir(no_face_dir)
 
 # Define allowed image extensions
 allowed_extensions = {'.png', '.jpeg', '.jpg', '.gif', '.bmp', '.tiff'}
+
+# Prepare CSV to log face details for easy future matching
+csv_path = os.path.join(config.sorted_path, 'face_clusters.csv')
+with open(csv_path, mode='w', newline='') as csv_file:
+    writer = csv.writer(csv_file)
+    writer.writerow(['Image Path', 'Location', 'Cluster Label'])
 
 # Use os.walk to process only image files in the input directory and all subdirectories
 all_files = []
@@ -34,7 +40,15 @@ processed_faces = {}
 data = []
 for file_path in tqdm(all_files, total=len(all_files)):
     print(f"Processing file: {file_path}")
+    # Check if the file exists before processing
+    if not os.path.exists(file_path):
+        print(f"File not found: {file_path}. Skipping.")
+        continue
+
+    # Load image
     image = loading_face(file_path, face_recognition)
+    if image is None:
+        continue  # Skip if the image failed to load
 
     # Detect faces using HOG model for memory efficiency
     face_locations = face_recognition.face_locations(image, model="hog")
@@ -47,12 +61,6 @@ for file_path in tqdm(all_files, total=len(all_files)):
 
     # Get face encodings
     face_encodings = face_recognition.face_encodings(image, face_locations)
-
-    # Check if encodings were returned
-    if not face_encodings:
-        print(f"No valid face encodings for {file_path}, moving to no_faces folder.")
-        shutil.move(file_path, os.path.join(no_face_dir, os.path.basename(file_path)))
-        continue
 
     # Process each face location and encoding
     for loc, encoding in zip(face_locations, face_encodings):
@@ -101,10 +109,15 @@ for label in unique_labels:
         # Add the encoding to the cluster's list of encodings
         cluster_encodings.append(item["encoding"])
 
+        # Append entry to CSV with image path, location, and cluster label
+        with open(csv_path, mode='a', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow([item["imagePath"], item["loc"], label])
+
     # Save the cluster encodings to a .pkl file
     pkl_path = os.path.join(config.cluster_path, f"face_{label}.pkl")
     with open(pkl_path, "wb") as f:
         pickle.dump(cluster_encodings, f)
     print(f"Saved cluster encodings to {pkl_path}")
 
-print("Clustering complete.")
+print("Clustering complete. Face data saved to CSV.")
