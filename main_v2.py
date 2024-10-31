@@ -121,3 +121,4 @@ for label in unique_labels:
     print(f"Saved cluster encodings to {pkl_path}")
 
 print("Clustering complete. Face data saved to CSV.")
+
