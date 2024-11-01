@@ -10,7 +10,9 @@ from sklearn.cluster import DBSCAN
 import cv2
 import csv
 from face_loading import loading_face
-
+import time
+from datetime import timedelta
+tic=time.time()
 # Ensure cluster and sorted directories exist
 utils.check_and_create_dir(config.cluster_path)
 utils.check_and_create_dir(config.sorted_path)
@@ -48,43 +50,48 @@ if os.path.exists(checkpoint_path):
 save_interval = 10  # Save checkpoint every 10 files
 for idx, file_path in enumerate(tqdm(all_files, total=len(all_files))):
     print(f"Processing file: {file_path}")
-    # Check if the file exists before processing
-    if not os.path.exists(file_path):
-        print(f"File not found: {file_path}. Skipping.")
-        continue
 
-    # Load image
-    image = loading_face(file_path, face_recognition)
-    if image is None:
-        continue  # Skip if the image failed to load
-
-    # Detect faces using HOG model for memory efficiency
-    face_locations = face_recognition.face_locations(image, model="hog")
-
-    # Check if face locations are found
-    if not face_locations:
-        print(f"No faces found in {file_path}, moving to no_faces folder.")
-        shutil.move(file_path, os.path.join(no_face_dir, os.path.basename(file_path)))
-        continue  # Skip this file if no faces are found
-
-    # Get face encodings
-    face_encodings = face_recognition.face_encodings(image, face_locations)
-
-    # Process each face location and encoding
-    for loc, encoding in zip(face_locations, face_encodings):
-        # Create a unique identifier using the image path and face location
-        face_id = f"{file_path}_{loc}"
-
-        # Check if this face has already been processed
-        if face_id in processed_faces:
-            print(f"Skipping duplicate face in {file_path} at location {loc}")
+    try:
+        # Check if the file exists before processing
+        if not os.path.exists(file_path):
+            print(f"File not found: {file_path}. Skipping.")
             continue
 
-        # Mark this face as processed
-        processed_faces[face_id] = True
+        # Load image
+        image = loading_face(file_path, face_recognition)
+        if image is None:
+            continue  # Skip if the image failed to load
 
-        # Append the face encoding and metadata to the data list for clustering
-        data.append({"imagePath": file_path, "loc": loc, "encoding": encoding})
+        # Detect faces using HOG model for memory efficiency
+        face_locations = face_recognition.face_locations(image, model="hog")
+
+        # Check if face locations are found
+        if not face_locations:
+            print(f"No faces found in {file_path}, moving to no_faces folder.")
+            shutil.move(file_path, os.path.join(no_face_dir, os.path.basename(file_path)))
+            continue  # Skip this file if no faces are found
+
+        # Get face encodings
+        face_encodings = face_recognition.face_encodings(image, face_locations)
+
+        # Process each face location and encoding
+        for loc, encoding in zip(face_locations, face_encodings):
+            # Create a unique identifier using the image path and face location
+            face_id = f"{file_path}_{loc}"
+
+            # Check if this face has already been processed
+            if face_id in processed_faces:
+                print(f"Skipping duplicate face in {file_path} at location {loc}")
+                continue
+
+            # Mark this face as processed
+            processed_faces[face_id] = True
+
+            # Append the face encoding and metadata to the data list for clustering
+            data.append({"imagePath": file_path, "loc": loc, "encoding": encoding})
+
+    except Exception as e:
+        print(f"Error processing file {file_path}: {e}")
 
     # Save checkpoint after processing every `save_interval` files
     if (idx + 1) % save_interval == 0:
@@ -117,26 +124,30 @@ for label in unique_labels:
     cluster_encodings = []
 
     for idx, item in enumerate([data[i] for i in range(len(data)) if labels[i] == label]):
-        # Load the original image
-        image = cv2.imread(item["imagePath"])
+        try:
+            # Load the original image
+            image = cv2.imread(item["imagePath"])
 
-        # Verify that the image was successfully loaded
-        if image is None:
-            print(f"Warning: Failed to load image {item['imagePath']}. Skipping this face.")
-            continue  # Skip this iteration if the image couldn't be loaded
+            # Verify that the image was successfully loaded
+            if image is None:
+                print(f"Warning: Failed to load image {item['imagePath']}. Skipping this face.")
+                continue  # Skip this iteration if the image couldn't be loaded
 
-        # Extract the face region from the image
-        top, right, bottom, left = item["loc"]
-        face_image = image[top:bottom, left:right]
-        cv2.imwrite(os.path.join(cluster_dir, f"face_{label}_{idx}.jpg"), face_image)
+            # Extract the face region from the image
+            top, right, bottom, left = item["loc"]
+            face_image = image[top:bottom, left:right]
+            cv2.imwrite(os.path.join(cluster_dir, f"face_{label}_{idx}.jpg"), face_image)
 
-        # Add the encoding to the cluster's list of encodings
-        cluster_encodings.append(item["encoding"])
+            # Add the encoding to the cluster's list of encodings
+            cluster_encodings.append(item["encoding"])
 
-        # Append entry to CSV with image path, location, and cluster label
-        with open(csv_path, mode='a', newline='') as csv_file:
-            writer = csv.writer(csv_file)
-            writer.writerow([item["imagePath"], item["loc"], label])
+            # Append entry to CSV with image path, location, and cluster label
+            with open(csv_path, mode='a', newline='') as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow([item["imagePath"], item["loc"], label])
+
+        except Exception as e:
+            print(f"Error processing face for cluster {label} in file {item['imagePath']}: {e}")
 
     # Save the cluster encodings to a .pkl file
     pkl_path = os.path.join(config.cluster_path, f"face_{label}.pkl")
@@ -145,3 +156,5 @@ for label in unique_labels:
     print(f"Saved cluster encodings to {pkl_path}")
 
 print("Clustering complete. Face data saved to CSV.")
+formatted_dur = str(timedelta(seconds=(time.time()-tic)))
+print(f'Runtime is {formatted_dur}')
